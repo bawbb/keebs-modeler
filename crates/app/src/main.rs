@@ -36,7 +36,7 @@ fn main() -> Result<(), String> {
     let audio = audio::start(params.clone(), stats.clone(), rx, buffer)?;
 
     let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([560.0, 760.0]).with_title("keebs"),
+        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([980.0, 820.0]).with_min_inner_size([720.0, 400.0]).with_title("keebs"),
         ..Default::default()
     };
     eframe::run_native(

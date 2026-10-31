@@ -17,6 +17,12 @@ pub struct Audio {
     pub buffer: String,
 }
 
+/// Name of the current system default output device.
+pub fn default_device_name() -> Option<String> {
+    let device = cpal::default_host().default_output_device()?;
+    device.description().ok().map(|d| d.name().to_string())
+}
+
 pub fn start(
     params: Arc<SharedParams>,
     stats: Arc<Stats>,
@@ -25,7 +31,7 @@ pub fn start(
 ) -> Result<Audio, String> {
     let host = cpal::default_host();
     let device = host.default_output_device().ok_or("no audio output device")?;
-    let name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "unknown".into());
+    let name = default_device_name().unwrap_or_else(|| "unknown".into());
     let supported = device.default_output_config().map_err(|e| e.to_string())?;
     let format = supported.sample_format();
     let mut config: cpal::StreamConfig = supported.config();
@@ -66,6 +72,7 @@ where
     engine.set_params(&params.load());
     let mut seen_version = params.version();
     let mut mono = vec![0.0f32; 4096];
+    let err_stats = stats.clone();
 
     device
         .build_output_stream(
@@ -112,7 +119,16 @@ where
                     stats.peak.store(peak.to_bits(), Relaxed);
                 }
             },
-            |e| eprintln!("audio error: {e}"),
+            // A stream on the default device follows the system output by itself;
+            // we only need to tell the UI so it can update the device name.
+            move |e| match e.kind() {
+                cpal::ErrorKind::DeviceChanged => {
+                    err_stats.device_lost.store(false, Relaxed);
+                    err_stats.device_changed.store(true, Relaxed);
+                }
+                cpal::ErrorKind::DeviceNotAvailable => err_stats.device_lost.store(true, Relaxed),
+                _ => eprintln!("audio error: {e}"),
+            },
             None,
         )
         .map_err(|e| e.to_string())

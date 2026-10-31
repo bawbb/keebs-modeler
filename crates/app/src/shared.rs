@@ -2,7 +2,7 @@
 
 use keebs_core::params::PARAM_COUNT;
 use keebs_core::{Event, ParamValues};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering::Relaxed};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 
 /// Parameters written by the UI, read by the audio thread when `version` changes.
@@ -45,6 +45,9 @@ pub struct Stats {
     pub load: AtomicU32,
     pub last_velocity: AtomicU32,
     pub sustain: AtomicU32,
+    /// Set by the audio error callback when the system output device changed or vanished.
+    pub device_changed: AtomicBool,
+    pub device_lost: AtomicBool,
 }
 
 impl Stats {

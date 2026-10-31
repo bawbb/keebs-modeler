@@ -15,6 +15,11 @@ const KEYMAP: [(egui::Key, u8); 13] = {
     [(A, 0), (W, 1), (S, 2), (E, 3), (D, 4), (F, 5), (T, 6), (G, 7), (Y, 8), (H, 9), (U, 10), (J, 11), (K, 12)]
 };
 
+/// Width of the parameter-name column in the slider list.
+const LABEL_WIDTH: f32 = 230.0;
+/// Room for the numeric box a slider draws after its track.
+const VALUE_WIDTH: f32 = 80.0;
+
 pub struct App {
     params: ParamValues,
     shared: Arc<SharedParams>,
@@ -80,13 +85,19 @@ impl App {
         }
     }
 
-    fn status(&mut self, ui: &mut egui::Ui) {
+    fn status_bar(&mut self, ui: &mut egui::Ui) {
+        if self.stats.device_changed.swap(false, Relaxed)
+            && let Some(name) = crate::audio::default_device_name()
+        {
+            self.audio.device = name;
+        }
+        let device = if self.stats.device_lost.load(Relaxed) { "no output device" } else { &self.audio.device };
         let load = self.stats.load();
         let peak = self.stats.take_peak();
         self.peak_hold = peak.max(self.peak_hold * 0.9);
         let sustain = f32::from_bits(self.stats.sustain.load(Relaxed));
-        ui.horizontal_wrapped(|ui| {
-            ui.label(format!("{} · {} Hz · {}", self.audio.device, self.audio.sample_rate, self.audio.buffer));
+        ui.horizontal(|ui| {
+            ui.label(format!("{device} · {} Hz · {}", self.audio.sample_rate, self.audio.buffer));
             ui.separator();
             ui.label(format!("voices {}", self.stats.voices.load(Relaxed)));
             ui.separator();
@@ -94,12 +105,16 @@ impl App {
             ui.separator();
             ui.label(format!("last vel {}", self.stats.last_velocity.load(Relaxed)));
             ui.separator();
-            ui.label(format!("pedal {:.0}%", sustain * 100.0));
+            let lift = keebs_core::engine::pedal_lift(sustain, &self.params);
+            ui.label(format!("pedal {:.0}% → dampers {:.0}% lifted", sustain * 100.0, lift * 100.0));
             ui.separator();
             let db = 20.0 * self.peak_hold.max(1e-6).log10();
             ui.add(egui::ProgressBar::new(((db + 60.0) / 60.0).clamp(0.0, 1.0)).desired_width(120.0).text(format!("{db:.0} dBFS")));
         });
-        ui.horizontal_wrapped(|ui| {
+    }
+
+    fn midi_row(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
             ui.label("MIDI:");
             egui::ComboBox::from_id_salt("midi")
                 .selected_text(&self.midi_name)
@@ -129,10 +144,24 @@ impl App {
                 ui.strong(group);
             }
             let mut v = self.params.get(s.id);
-            let slider = egui::Slider::new(&mut v, s.min..=s.max)
-                .logarithmic(s.log)
-                .text(if s.unit.is_empty() { s.label.to_string() } else { format!("{} ({})", s.label, s.unit) });
-            let r = ui.add(slider).on_hover_text(s.help);
+            let label = if s.unit.is_empty() { s.label.to_string() } else { format!("{} ({})", s.label, s.unit) };
+            let r = ui
+                .horizontal(|ui| {
+                    let h = ui.spacing().interact_size.y;
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(LABEL_WIDTH, h),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.set_min_width(LABEL_WIDTH);
+                            ui.label(label).on_hover_text(s.help);
+                        },
+                    );
+                    // Leave room for the value box the slider draws to its right.
+                    ui.spacing_mut().slider_width = (ui.available_width() - VALUE_WIDTH).max(80.0);
+                    ui.add(egui::Slider::new(&mut v, s.min..=s.max).logarithmic(s.log))
+                })
+                .inner
+                .on_hover_text(s.help);
             if r.double_clicked() {
                 v = s.default;
             }
@@ -155,16 +184,25 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.computer_keys(ui);
-        egui::Frame::central_panel(ui.style()).show(ui, |ui| {
-            self.status(ui);
-            ui.separator();
+        egui::Panel::top("top").show(ui, |ui| {
+            ui.add_space(4.0);
+            self.midi_row(ui);
             ui.horizontal(|ui| {
                 ui.label(format!("Computer keys: A–K play from note {} · Z/X octave · velocity", self.base_note));
                 ui.add(egui::Slider::new(&mut self.key_velocity, 1..=127));
             });
-            ui.separator();
-            egui::ScrollArea::vertical().show(ui, |ui| self.controls(ui));
-            ui.small("Hover a slider for what it does · double-click to reset it");
+            ui.small("Hover a control for what it does · double-click a slider to reset it");
+            ui.add_space(4.0);
+        });
+        egui::Panel::bottom("status").show(ui, |ui| {
+            ui.add_space(2.0);
+            self.status_bar(ui);
+            ui.add_space(2.0);
+        });
+        egui::CentralPanel::default().show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| self.controls(ui));
         });
         ui.ctx().request_repaint_after(Duration::from_millis(50));
     }
