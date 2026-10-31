@@ -51,4 +51,4 @@ You can't listen, so **measure**: use `survey`, `pedal`, and `bench`, and add a 
 
 ## Commits
 
-Commit on your own once the user has confirmed a feature's work has been tested/reviewed (e.g. they've played it and are happy) — don't commit untested or unreviewed work. Group by topic (e.g. engine vs UI), one commit per feature.
+Commit on your own once the user has confirmed a feature's work has been tested/reviewed (e.g. they've played it and are happy) — don't commit untested or unreviewed work. Group by topic (e.g. engine vs UI), one commit per feature. Push to `origin` (GitHub, SSH) after committing.
