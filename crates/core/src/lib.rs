@@ -52,6 +52,19 @@ mod tests {
     }
 
     #[test]
+    fn soft_bass_survives_the_gaps_between_its_pulses() {
+        // A light hammer on a low string sends narrow pulses with near-silent
+        // gaps a period long; the voice must not be freed in a gap.
+        let mut p = ParamValues::default();
+        p.set(ParamId::HammerMass, 0.3);
+        let mut e = Engine::new(SR, 4);
+        e.set_params(&p);
+        e.handle(Event::NoteOn { key: 21, velocity: 20 });
+        render(&mut e, 0.5);
+        assert!(e.voice_for_key(21).is_some(), "soft A0 was cut off");
+    }
+
+    #[test]
     fn harder_is_louder_and_brighter() {
         for key in [36, 60, 84] {
             let soft = strike(key, 20, ParamValues::default());

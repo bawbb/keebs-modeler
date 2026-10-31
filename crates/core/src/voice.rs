@@ -20,8 +20,11 @@ const ENVELOPE_RELEASE: f64 = 0.05;
 const GAP_REF: f64 = 1.0;
 /// A voice is silent once its block peak falls this far below its loudest (−80 dB).
 const SILENCE_REL: f64 = 1e-4;
-/// Consecutive silent blocks before the voice is freed.
-const SILENT_BLOCKS: u32 = 8;
+/// How long a voice must stay silent before it is freed, s.
+const SILENT_TIME: f64 = 0.01;
+/// ...and at least this many periods of its fundamental: a low string's output
+/// is a train of pulses with near-silent gaps up to a period long.
+const SILENT_PERIODS: f64 = 2.0;
 /// Slowest hammer, m/s (so velocity 1 still makes a sound).
 const MIN_SPEED: f64 = 0.05;
 
@@ -40,7 +43,8 @@ pub struct Voice {
     /// Recent output amplitude.
     envelope: f64,
     envelope_coeff: f64,
-    silent_blocks: u32,
+    /// Samples of continuous silence so far.
+    silent_samples: f64,
     /// Peak of the last processed block.
     pub peak: f64,
     /// Loudest block peak since the last strike.
@@ -61,7 +65,7 @@ impl Voice {
             half_pedal_depth_db: 42.0,
             envelope: 0.0,
             envelope_coeff: (-1.0 / (ENVELOPE_RELEASE * sample_rate)).exp(),
-            silent_blocks: 0,
+            silent_samples: 0.0,
             peak: 0.0,
             max_peak: 0.0,
         }
@@ -81,7 +85,7 @@ impl Voice {
         self.lift = 1.0;
         self.lift_target = 1.0;
         self.envelope = 0.0;
-        self.silent_blocks = 0;
+        self.silent_samples = 0.0;
         self.peak = 0.0;
         self.max_peak = 0.0;
     }
@@ -115,7 +119,7 @@ impl Voice {
         // Pressing the key lifts its damper before the hammer arrives.
         self.lift = 1.0;
         self.lift_target = 1.0;
-        self.silent_blocks = 0;
+        self.silent_samples = 0.0;
         self.max_peak = 0.0;
     }
 
@@ -172,12 +176,12 @@ impl Voice {
         }
         self.max_peak = self.max_peak.max(peak);
         if peak < SILENCE_REL * self.max_peak && !self.hammer.is_active() {
-            self.silent_blocks += 1;
-            if self.silent_blocks >= SILENT_BLOCKS {
+            self.silent_samples += n;
+            if self.silent_samples * dt >= SILENT_TIME.max(SILENT_PERIODS / self.nd.f0) {
                 self.key = None;
             }
         } else {
-            self.silent_blocks = 0;
+            self.silent_samples = 0.0;
         }
     }
 }
