@@ -22,10 +22,11 @@ pub enum ParamId {
     PedalBite,
     PedalWidth,
     HalfPedalDepth,
+    KeyBalance,
     MasterGain,
 }
 
-pub const PARAM_COUNT: usize = 20;
+pub const PARAM_COUNT: usize = 21;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ParamSpec {
@@ -100,6 +101,8 @@ pub const PARAMS: [ParamSpec; PARAM_COUNT] = [
       "Pedal travel from dampers first lifting to fully clear. Wider = more room for half-pedalling."),
     p(HalfPedalDepth, "half_pedal_depth", "Half-pedal depth", "Pedal", 6.0, 72.0, 42.0, "dB", false,
       "In the half-pedal zone, loud notes are pulled down until they're quiet enough to clear the dampers, then ring on. Larger = quieter tails near the bite point."),
+    p(KeyBalance, "key_balance", "Key balance", "Output", 0.0, 1.5, 1.0, "", false,
+      "How loudness is matched across the keyboard. 0 = equal peak level (the bass sounds weaker), 1 = equal loudness to the ear, above 1 pushes the low bass further."),
     p(MasterGain, "gain", "Master gain", "Output", -36.0, 12.0, -6.0, "dB", false,
       "Output level before the soft limiter."),
 ];

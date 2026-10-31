@@ -39,7 +39,7 @@ You can't listen, so **measure**: use `survey`, `pedal`, and `bench`, and add a 
 - **Audio thread**: no allocation, no locks, no I/O. Mode vectors are preallocated to `MAX_MODES`; `configure()` may run mid-note and must keep ringing state. Events reach the audio thread through an `rtrb` ring buffer (producers lock; the audio consumer never does).
 - Internal DSP is `f64`.
 - **Hammer–string contact is solved implicitly** each sample (bracketed Newton on the felt law). Explicit coupling blows up on light treble strings — don't revert it.
-- **Treble hammers are deliberately much lighter/harder than real** (`core/src/note.rs` anchors); otherwise soft treble notes are smothered. Per-key `level` trim keeps a medium strike equally loud on every key — re-check with `survey` after changing anchors.
+- **Treble hammers are deliberately much lighter/harder than real** (`core/src/note.rs` anchors); otherwise soft treble notes are smothered. Per-key `level` matches peak level and `balance` then matches *perceived* (A-weighted) loudness at a medium strike — re-check both with `survey` (`heard_dB` column) after changing anchors.
 - **Damping** is folded into each mode's coefficients once per 64-sample block (`ModalString::set_damping`), so the per-sample loop stays lean.
 - Per-key defaults are log-interpolated between anchors in `note.rs`.
 - **Performance ideas** go in `docs/performance.md` as you notice them (new hot loops, per-mode costs, memory). Note them; don't apply them — desktop stays unconstrained.

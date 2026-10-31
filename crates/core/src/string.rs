@@ -94,7 +94,8 @@ impl ModalString {
         let listen_mix = p.get(ParamId::ListenMix) as f64;
         let listen_pos = p.get(ParamId::ListenPos) as f64;
         let force_to_mode = 2.0 / (nd.mu * nd.length);
-        let bridge = nd.tension * PI / nd.length * OUTPUT_NORM * nd.level;
+        let level = nd.level * nd.balance.powf(p.get(ParamId::KeyBalance) as f64);
+        let bridge = nd.tension * PI / nd.length * OUTPUT_NORM * level;
         let f_limit = MAX_MODE_HZ.min(0.45 * sample_rate);
 
         let mut count = 0;
