@@ -20,8 +20,15 @@ fn main() -> Result<(), String> {
             "--midi" => midi_wanted = args.next().ok_or("--midi needs a name")?,
             "--buffer" => buffer = args.next().and_then(|b| b.parse().ok()).ok_or("--buffer needs a number")?,
             "--list" => {
+                println!("MIDI inputs:");
                 for p in midi::port_names() {
-                    println!("{p}");
+                    println!("  {p}");
+                }
+                println!("Audio outputs:");
+                let default = audio::default_device_name();
+                for d in audio::output_device_names() {
+                    let mark = if Some(&d) == default.as_ref() { "  (system default)" } else { "" };
+                    println!("  {d}{mark}");
                 }
                 return Ok(());
             }
@@ -31,18 +38,17 @@ fn main() -> Result<(), String> {
 
     let params = Arc::new(SharedParams::new(&ParamValues::default()));
     let stats = Arc::new(Stats::default());
-    let (tx, rx) = rtrb::RingBuffer::new(1024);
+    let (audio, tx) = audio::start(None, params.clone(), stats.clone(), buffer)?;
     let tx = Arc::new(Mutex::new(tx));
-    let audio = audio::start(params.clone(), stats.clone(), rx, buffer)?;
 
     let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([980.0, 820.0]).with_min_inner_size([720.0, 400.0]).with_title("keebs"),
+        viewport: eframe::egui::ViewportBuilder::default().with_inner_size([980.0, 700.0]).with_min_inner_size([720.0, 400.0]).with_title("keebs"),
         ..Default::default()
     };
     eframe::run_native(
         "keebs",
         options,
-        Box::new(move |_| Ok(Box::new(ui::App::new(params, stats, tx, audio, &midi_wanted)))),
+        Box::new(move |_| Ok(Box::new(ui::App::new(params, stats, tx, audio, buffer, &midi_wanted)))),
     )
     .map_err(|e| e.to_string())
 }

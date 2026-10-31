@@ -10,12 +10,12 @@ An expressive, physically modelled struck-string instrument played from a MIDI k
 ```sh
 cargo run --release -p keebs                 # listens to every MIDI input
 cargo run --release -p keebs -- --midi "name" # just one (substring match)
-cargo run --release -p keebs -- --list        # list MIDI inputs
+cargo run --release -p keebs -- --list        # list MIDI inputs and audio outputs
 cargo run --release -p keebs -- --buffer 64   # request a smaller audio buffer
 ```
 
 No controller? Computer keys A–K play, Z/X shift octave.
-Hover a slider to see what it does; double-click to reset it.
+Hover a slider to see what it does; scroll over its value to nudge it (hold Option for fine steps); double-click the value to reset it.
 
 ## Render to WAV
 

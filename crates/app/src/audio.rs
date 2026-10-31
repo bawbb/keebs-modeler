@@ -10,28 +10,56 @@ use std::time::Instant;
 
 const MAX_VOICES: usize = 32;
 
+/// Room for events between the UI/MIDI threads and the audio thread.
+const EVENT_QUEUE: usize = 1024;
+
 pub struct Audio {
     _stream: cpal::Stream,
+    /// Name of the device actually playing.
     pub device: String,
+    /// `None` = auto (follows the system default output).
+    pub choice: Option<String>,
     pub sample_rate: u32,
     pub buffer: String,
 }
 
-/// Name of the current system default output device.
-pub fn default_device_name() -> Option<String> {
-    let device = cpal::default_host().default_output_device()?;
-    device.description().ok().map(|d| d.name().to_string())
+fn device_name(d: &cpal::Device) -> Option<String> {
+    d.description().ok().map(|d| d.name().to_string())
 }
 
+/// Name of the current system default output device.
+pub fn default_device_name() -> Option<String> {
+    device_name(&cpal::default_host().default_output_device()?)
+}
+
+/// Names of every output device.
+pub fn output_device_names() -> Vec<String> {
+    cpal::default_host()
+        .output_devices()
+        .map(|ds| ds.filter_map(|d| device_name(&d)).collect())
+        .unwrap_or_default()
+}
+
+/// Open an output stream running a fresh engine. `choice` names a device, or
+/// `None` for auto (the system default, followed as it changes). Returns the
+/// producer side of the stream's event queue.
 pub fn start(
+    choice: Option<&str>,
     params: Arc<SharedParams>,
     stats: Arc<Stats>,
-    rx: rtrb::Consumer<Event>,
     buffer_frames: u32,
-) -> Result<Audio, String> {
+) -> Result<(Audio, rtrb::Producer<Event>), String> {
     let host = cpal::default_host();
-    let device = host.default_output_device().ok_or("no audio output device")?;
-    let name = default_device_name().unwrap_or_else(|| "unknown".into());
+    let device = match choice {
+        None => host.default_output_device().ok_or("no audio output device")?,
+        Some(name) => host
+            .output_devices()
+            .map_err(|e| e.to_string())?
+            .find(|d| device_name(d).as_deref() == Some(name))
+            .ok_or_else(|| format!("output device `{name}` not found"))?,
+    };
+    let name = device_name(&device).unwrap_or_else(|| "unknown".into());
+    let (tx, rx) = rtrb::RingBuffer::new(EVENT_QUEUE);
     let supported = device.default_output_config().map_err(|e| e.to_string())?;
     let format = supported.sample_format();
     let mut config: cpal::StreamConfig = supported.config();
@@ -45,15 +73,24 @@ pub fn start(
 
     use cpal::SampleFormat as F;
     let stream = match format {
-        F::F32 => build::<f32>(&device, &config, params, stats, rx),
-        F::F64 => build::<f64>(&device, &config, params, stats, rx),
-        F::I16 => build::<i16>(&device, &config, params, stats, rx),
-        F::I32 => build::<i32>(&device, &config, params, stats, rx),
-        F::U16 => build::<u16>(&device, &config, params, stats, rx),
+        F::F32 => build::<f32>(&device, &config, params, stats.clone(), rx),
+        F::F64 => build::<f64>(&device, &config, params, stats.clone(), rx),
+        F::I16 => build::<i16>(&device, &config, params, stats.clone(), rx),
+        F::I32 => build::<i32>(&device, &config, params, stats.clone(), rx),
+        F::U16 => build::<u16>(&device, &config, params, stats.clone(), rx),
         other => return Err(format!("unsupported sample format {other:?}")),
     }?;
     stream.play().map_err(|e| e.to_string())?;
-    Ok(Audio { _stream: stream, device: name, sample_rate: config.sample_rate, buffer })
+    stats.device_lost.store(false, Relaxed);
+    stats.device_changed.store(false, Relaxed);
+    let audio = Audio {
+        _stream: stream,
+        device: name,
+        choice: choice.map(str::to_string),
+        sample_rate: config.sample_rate,
+        buffer,
+    };
+    Ok((audio, tx))
 }
 
 fn build<T>(
