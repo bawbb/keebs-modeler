@@ -27,9 +27,17 @@ pub fn mode_frequency(n: usize, f1: f64, b: f64) -> f64 {
 
 #[derive(Default)]
 pub struct ModalString {
-    // Per-mode coefficients.
+    // Per-mode coefficients, undamped.
     a1: Vec<f64>,
     a2: Vec<f64>,
+    /// Coefficients with the current damper applied (what `tick` uses).
+    a1_eff: Vec<f64>,
+    a2_eff: Vec<f64>,
+    /// How strongly the damper acts on each mode, relative to the base rate.
+    damp_w: Vec<f64>,
+    /// Damper decay rate currently folded into `a1_eff`/`a2_eff`, 1/s.
+    damper_sigma: f64,
+    dt: f64,
     /// Hammer force → mode gain.
     exc: Vec<f64>,
     /// Mode shape at the strike point (for the hammer's view of the string).
@@ -51,6 +59,11 @@ impl ModalString {
         Self {
             a1: v(),
             a2: v(),
+            a1_eff: v(),
+            a2_eff: v(),
+            damp_w: v(),
+            damper_sigma: 0.0,
+            dt: 1.0 / 48_000.0,
             exc: v(),
             shape: v(),
             out_w: v(),
@@ -69,7 +82,9 @@ impl ModalString {
     /// Never allocates beyond `MAX_MODES` capacity.
     pub fn configure(&mut self, nd: &NoteDefaults, p: &ParamValues, sample_rate: f64) {
         let dt = 1.0 / sample_rate;
+        self.dt = dt;
         let b = nd.b * p.get(ParamId::Inharmonicity) as f64;
+        let damper_tone = p.get(ParamId::DamperTone) as f64;
         let f1 = nd.f0;
         let sigma1 = T60_TO_SIGMA / (nd.t60 * p.get(ParamId::Sustain) as f64);
         let hf = HF_DAMPING_K * p.get(ParamId::HfDamping) as f64;
@@ -86,7 +101,16 @@ impl ModalString {
         while count < MAX_MODES && mode_frequency(count + 1, f1, b) < f_limit {
             count += 1;
         }
-        for v in [&mut self.a1, &mut self.a2, &mut self.exc, &mut self.shape, &mut self.out_w] {
+        for v in [
+            &mut self.a1,
+            &mut self.a2,
+            &mut self.a1_eff,
+            &mut self.a2_eff,
+            &mut self.damp_w,
+            &mut self.exc,
+            &mut self.shape,
+            &mut self.out_w,
+        ] {
             v.resize(count, 0.0);
         }
         // New modes start silent; dropped modes are simply discarded.
@@ -103,6 +127,9 @@ impl ModalString {
             let r = (-sigma * dt).exp();
             self.a1[i] = 2.0 * r * (omega_d * dt).cos();
             self.a2[i] = r * r;
+            // Tone 0: every partial damped alike. Tone 1: the fundamental lingers
+            // ~4x longer and high partials go much faster.
+            self.damp_w[i] = (1.0 - 0.75 * damper_tone) * (f / f1).powf(damper_tone);
             let shape = (nf * PI * strike).sin();
             self.shape[i] = shape;
             self.exc[i] = dt * r * (omega_d * dt).sin() / omega_d * force_to_mode * shape;
@@ -117,6 +144,28 @@ impl ModalString {
             self.out_w[i] = bridge * nf * tilt * parity * listen;
         }
         self.compliance = self.exc.iter().zip(&self.shape).map(|(e, s)| e * s).sum();
+        let sigma = self.damper_sigma;
+        self.damper_sigma = f64::NAN; // force a re-apply
+        self.set_damping(sigma);
+    }
+
+    /// Apply a damper decay rate (1/s, scaled per mode by the damper tone).
+    /// Cheap to call once per block; no-op if unchanged.
+    pub fn set_damping(&mut self, sigma: f64) {
+        if sigma == self.damper_sigma {
+            return;
+        }
+        self.damper_sigma = sigma;
+        if sigma <= 0.0 {
+            self.a1_eff.copy_from_slice(&self.a1);
+            self.a2_eff.copy_from_slice(&self.a2);
+            return;
+        }
+        for i in 0..self.a1.len() {
+            let d = (-sigma * self.damp_w[i] * self.dt).exp();
+            self.a1_eff[i] = self.a1[i] * d;
+            self.a2_eff[i] = self.a2[i] * d * d;
+        }
     }
 
     pub fn reset(&mut self) {
@@ -135,27 +184,24 @@ impl ModalString {
 
     /// Where the strike point would be next sample with no hammer force.
     #[inline]
-    pub fn predict_strike(&self, damp: f64) -> f64 {
-        let d2 = damp * damp;
+    pub fn predict_strike(&self) -> f64 {
         let n = self.a1.len();
-        let (a1, a2, shape) = (&self.a1[..n], &self.a2[..n], &self.shape[..n]);
+        let (a1, a2, shape) = (&self.a1_eff[..n], &self.a2_eff[..n], &self.shape[..n]);
         let (q1, q2) = (&self.q1[..n], &self.q2[..n]);
-        (0..n).map(|i| shape[i] * (damp * a1[i] * q1[i] - d2 * a2[i] * q2[i])).sum()
+        (0..n).map(|i| shape[i] * (a1[i] * q1[i] - a2[i] * q2[i])).sum()
     }
 
-    /// Advance one sample with hammer force `force` (N). `damp` is an extra
-    /// per-sample decay factor (1.0 = none). Returns the output sample.
+    /// Advance one sample with hammer force `force` (N). Returns the output sample.
     #[inline]
-    pub fn tick(&mut self, force: f64, damp: f64) -> f64 {
-        let d2 = damp * damp;
+    pub fn tick(&mut self, force: f64) -> f64 {
         let mut y = 0.0;
         let mut out = 0.0;
         let n = self.a1.len();
         let (a1, a2, exc, shape, w) =
-            (&self.a1[..n], &self.a2[..n], &self.exc[..n], &self.shape[..n], &self.out_w[..n]);
+            (&self.a1_eff[..n], &self.a2_eff[..n], &self.exc[..n], &self.shape[..n], &self.out_w[..n]);
         let (q1, q2) = (&mut self.q1[..n], &mut self.q2[..n]);
         for i in 0..n {
-            let q = damp * a1[i] * q1[i] - d2 * a2[i] * q2[i] + exc[i] * force;
+            let q = a1[i] * q1[i] - a2[i] * q2[i] + exc[i] * force;
             q2[i] = q1[i];
             q1[i] = q;
             y += shape[i] * q;

@@ -1,12 +1,23 @@
 //! One key: a string, its hammer, and its damper.
+//!
+//! The damper floats a gap above the string that depends on how far it is
+//! lifted. Whenever the string swings wider than the gap it rubs the felt, for
+//! the fraction of each cycle it spends beyond the gap. So a partly lifted
+//! damper pulls loud notes down until they fit inside the gap, then lets them
+//! ring: real half-pedalling.
 
 use crate::hammer::{Hammer, HammerSettings};
 use crate::note::NoteDefaults;
 use crate::params::{ParamId, ParamValues};
 use crate::string::{ModalString, T60_TO_SIGMA};
+use std::f64::consts::FRAC_2_PI;
 
-/// Damper felt reaches full effect over roughly this long, s.
+/// Damper felt moves between positions over roughly this long, s.
 const DAMPER_SMOOTH: f64 = 0.008;
+/// Amplitude follower release, s (longer than the lowest note's period).
+const ENVELOPE_RELEASE: f64 = 0.05;
+/// Output amplitude a hard strike rings at; the half-pedal gap is relative to this.
+const GAP_REF: f64 = 1.0;
 /// A voice is silent once its block peak falls this far below its loudest (−80 dB).
 const SILENCE_REL: f64 = 1e-4;
 /// Consecutive silent blocks before the voice is freed.
@@ -20,11 +31,15 @@ pub struct Voice {
     string: ModalString,
     hammer: Hammer,
     sample_rate: f64,
-    /// 0 = damper off the string, 1 = fully on.
-    damper_target: f64,
-    damper: f64,
+    /// Damper lift: 0 = resting on the string, 1 = fully clear.
+    lift_target: f64,
+    lift: f64,
+    /// Damper decay rate at full contact, 1/s.
     damper_sigma: f64,
-    damper_coeff: f64,
+    half_pedal_depth_db: f64,
+    /// Recent output amplitude.
+    envelope: f64,
+    envelope_coeff: f64,
     silent_blocks: u32,
     /// Peak of the last processed block.
     pub peak: f64,
@@ -40,10 +55,12 @@ impl Voice {
             string: ModalString::new(),
             hammer: Hammer::default(),
             sample_rate,
-            damper_target: 0.0,
-            damper: 0.0,
+            lift_target: 1.0,
+            lift: 1.0,
             damper_sigma: 0.0,
-            damper_coeff: 1.0 - (-1.0 / (DAMPER_SMOOTH * sample_rate)).exp(),
+            half_pedal_depth_db: 42.0,
+            envelope: 0.0,
+            envelope_coeff: (-1.0 / (ENVELOPE_RELEASE * sample_rate)).exp(),
             silent_blocks: 0,
             peak: 0.0,
             max_peak: 0.0,
@@ -61,8 +78,9 @@ impl Voice {
         self.string.reset();
         self.configure(p);
         self.hammer = Hammer::default();
-        self.damper = 0.0;
-        self.damper_target = 0.0;
+        self.lift = 1.0;
+        self.lift_target = 1.0;
+        self.envelope = 0.0;
         self.silent_blocks = 0;
         self.peak = 0.0;
         self.max_peak = 0.0;
@@ -71,6 +89,7 @@ impl Voice {
     pub fn configure(&mut self, p: &ParamValues) {
         self.string.configure(&self.nd, p, self.sample_rate);
         self.damper_sigma = T60_TO_SIGMA / p.get(ParamId::DamperRelease) as f64;
+        self.half_pedal_depth_db = p.get(ParamId::HalfPedalDepth) as f64;
     }
 
     pub fn hammer(&self) -> &Hammer {
@@ -93,14 +112,31 @@ impl Voice {
             hysteresis: p.get(ParamId::FeltHysteresis) as f64,
         };
         self.hammer.strike(settings, speed, self.string.y_strike());
-        self.damper_target = 0.0;
+        // Pressing the key lifts its damper before the hammer arrives.
+        self.lift = 1.0;
+        self.lift_target = 1.0;
         self.silent_blocks = 0;
         self.max_peak = 0.0;
     }
 
-    /// 0 = undamped, 1 = fully damped.
-    pub fn set_damper(&mut self, amount: f64) {
-        self.damper_target = amount.clamp(0.0, 1.0);
+    /// Damper lift: 0 = resting on the string, 1 = fully clear.
+    pub fn set_lift(&mut self, lift: f64) {
+        self.lift_target = lift.clamp(0.0, 1.0);
+    }
+
+    /// Fraction of full damper contact right now (0..1).
+    fn contact(&self) -> f64 {
+        if self.lift >= 0.999 {
+            return 0.0;
+        }
+        // Gap grows from nothing (resting) to "everything fits" as the damper lifts.
+        let gap = GAP_REF * self.lift * 10f64.powf(-self.half_pedal_depth_db * (1.0 - self.lift) / 20.0);
+        if self.envelope <= gap {
+            0.0
+        } else {
+            // Fraction of a sine cycle spent beyond ±gap.
+            FRAC_2_PI * (gap / self.envelope).acos()
+        }
     }
 
     /// Add this voice's output into `out`. Frees the voice once it's silent.
@@ -109,17 +145,20 @@ impl Voice {
             return;
         }
         let dt = 1.0 / self.sample_rate;
+        let n = out.len() as f64;
+        self.lift += (self.lift_target - self.lift) * (1.0 - (-n * dt / DAMPER_SMOOTH).exp());
+        self.string.set_damping(self.contact() * self.damper_sigma);
+
         let mut peak: f64 = 0.0;
         for o in out.iter_mut() {
-            self.damper += (self.damper_target - self.damper) * self.damper_coeff;
-            let damp = if self.damper > 1e-6 { (-self.damper * self.damper_sigma * dt).exp() } else { 1.0 };
             let force = if self.hammer.is_active() {
-                let y_free = self.string.predict_strike(damp);
+                let y_free = self.string.predict_strike();
                 self.hammer.tick(y_free, self.string.compliance(), dt)
             } else {
                 0.0
             };
-            let s = self.string.tick(force, damp);
+            let s = self.string.tick(force);
+            self.envelope = s.abs().max(self.envelope * self.envelope_coeff);
             peak = peak.max(s.abs());
             *o += s as f32;
         }

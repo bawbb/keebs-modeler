@@ -11,6 +11,8 @@
 - Releasing a key ends the note naturally, not with a cut.
 - The sustain pedal lets notes ring and lets the instrument resonate as a whole.
 - Partial pedal is meaningful, not just on/off.
+- Partial pedal tames loud notes while letting a quieter tail sustain.
+- How the pedal's travel maps to damping is adjustable to suit the pedal and the player.
 
 ## Feel
 

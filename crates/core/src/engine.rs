@@ -14,6 +14,15 @@ pub enum Event {
     Sustain(f32),
 }
 
+/// Damper lift (0 = resting, 1 = clear) for a pedal position (0 = up, 1 = down),
+/// through the bite point and half-pedal width.
+pub fn pedal_lift(pedal: f32, p: &ParamValues) -> f64 {
+    let bite = p.get(ParamId::PedalBite) as f64;
+    let width = p.get(ParamId::PedalWidth) as f64;
+    let x = ((pedal as f64 - bite) / width).clamp(0.0, 1.0);
+    x * x * (3.0 - 2.0 * x)
+}
+
 pub struct Engine {
     voices: Vec<Voice>,
     held: [bool; 128],
@@ -47,6 +56,19 @@ impl Engine {
         for v in self.voices.iter_mut().filter(|v| !v.is_free()) {
             v.configure(p);
         }
+        self.update_dampers();
+    }
+
+    /// Re-seat the dampers of every released key at the current pedal lift.
+    fn update_dampers(&mut self) {
+        let lift = pedal_lift(self.sustain as f32, &self.params);
+        for v in self.voices.iter_mut() {
+            if let Some(k) = v.key
+                && !self.held[k as usize]
+            {
+                v.set_lift(lift);
+            }
+        }
     }
 
     pub fn voice_for_key(&self, key: u8) -> Option<&Voice> {
@@ -64,14 +86,7 @@ impl Engine {
             Event::NoteOff { key } => self.note_off(key),
             Event::Sustain(s) => {
                 self.sustain = (s as f64).clamp(0.0, 1.0);
-                let damper = 1.0 - self.sustain;
-                for v in self.voices.iter_mut() {
-                    if let Some(k) = v.key
-                        && !self.held[k as usize]
-                    {
-                        v.set_damper(damper);
-                    }
-                }
+                self.update_dampers();
             }
         }
     }
@@ -97,9 +112,9 @@ impl Engine {
     fn note_off(&mut self, key: u8) {
         let key = key.min(127);
         self.held[key as usize] = false;
-        let damper = 1.0 - self.sustain;
+        let lift = pedal_lift(self.sustain as f32, &self.params);
         for v in self.voices.iter_mut().filter(|v| v.key == Some(key)) {
-            v.set_damper(damper);
+            v.set_lift(lift);
         }
     }
 

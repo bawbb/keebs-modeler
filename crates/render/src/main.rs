@@ -3,7 +3,7 @@
 //!   render [key=value ...]
 //!
 //! Options: note=60  vel=100 (or vel=20,60,100,127 for a sweep)  hold=2.0 (s per strike)
-//!          gap=0.5 (s after release)  pedal=0|1  sr=48000  out=tmp/out.wav
+//!          gap=0.5 (s after release)  pedal=0..1  sr=48000  out=tmp/out.wav
 //! Any engine parameter by key, e.g. strike_pos=0.5 hardness=3 inharm=8. `render help` lists them.
 
 use keebs_core::{Engine, Event, PARAMS, ParamValues, params};
@@ -21,7 +21,7 @@ fn main() -> ExitCode {
 
 fn usage() {
     eprintln!("render [key=value ...]\n");
-    eprintln!("  note=60  vel=100 | vel=20,60,100,127  hold=2.0  gap=0.5  pedal=0|1  sr=48000  out=tmp/out.wav\n");
+    eprintln!("  note=60  vel=100 | vel=20,60,100,127  hold=2.0  gap=0.5  pedal=0..1  sr=48000  out=tmp/out.wav\n");
     eprintln!("Engine parameters:");
     for s in &PARAMS {
         eprintln!("  {:<12} {:>7} .. {:<7} default {:<6} {}  — {}", s.key, s.min, s.max, s.default, s.unit, s.help);
@@ -33,7 +33,7 @@ fn run() -> Result<(), String> {
     let mut vels: Vec<u8> = vec![100];
     let mut hold = 2.0f32;
     let mut gap = 0.5f32;
-    let mut pedal = false;
+    let mut pedal = 0.0f32;
     let mut sr = 48_000u32;
     let mut out = String::from("tmp/out.wav");
     let mut p = ParamValues::default();
@@ -52,7 +52,7 @@ fn run() -> Result<(), String> {
             }
             "hold" => hold = num(v)?,
             "gap" => gap = num(v)?,
-            "pedal" => pedal = num(v)? != 0.0,
+            "pedal" => pedal = num(v)?.clamp(0.0, 1.0),
             "sr" => sr = num(v)? as u32,
             "out" => out = v.to_string(),
             _ => {
@@ -64,9 +64,7 @@ fn run() -> Result<(), String> {
 
     let mut engine = Engine::new(sr as f32, 8);
     engine.set_params(&p);
-    if pedal {
-        engine.handle(Event::Sustain(1.0));
-    }
+    engine.handle(Event::Sustain(pedal));
 
     let samples = |secs: f32| (secs * sr as f32) as usize;
     let mut audio = Vec::new();

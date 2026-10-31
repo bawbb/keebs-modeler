@@ -31,6 +31,6 @@ Renders and other scratch output go in `tmp/` (gitignored; default output is `tm
 
 | Crate | |
 |---|---|
-| `crates/core` | The sound engine (no I/O). `examples/survey.rs` and `examples/bench.rs` measure tone and CPU. |
+| `crates/core` | The sound engine (no I/O). `examples/` measure tone (`survey`), pedal behaviour (`pedal`), and CPU (`bench`). |
 | `crates/app` | Standalone player: `cpal` audio, `midir` MIDI, `eframe` controls. |
 | `crates/render` | Offline renderer for listening and comparing settings. |

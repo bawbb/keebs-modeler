@@ -18,10 +18,14 @@ pub enum ParamId {
     ListenMix,
     ListenPos,
     DamperRelease,
+    DamperTone,
+    PedalBite,
+    PedalWidth,
+    HalfPedalDepth,
     MasterGain,
 }
 
-pub const PARAM_COUNT: usize = 16;
+pub const PARAM_COUNT: usize = 20;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ParamSpec {
@@ -88,6 +92,14 @@ pub const PARAMS: [ParamSpec; PARAM_COUNT] = [
       "Where on the string the listen point sits. Adds its own pattern of silenced partials."),
     p(DamperRelease, "damper", "Damper release", "Damper", 0.03, 3.0, 0.25, "s", true,
       "How long a note takes to die after the key is released (no pedal)."),
+    p(DamperTone, "damper_tone", "Damper tone", "Damper", 0.0, 1.0, 0.5, "", false,
+      "How the damper takes partials away. 0 = all at once; 1 = highs first, leaving a muffled tail."),
+    p(PedalBite, "pedal_bite", "Pedal bite point", "Pedal", 0.0, 0.95, 0.15, "of travel", false,
+      "How far down the pedal goes before the dampers start to leave the strings."),
+    p(PedalWidth, "pedal_width", "Half-pedal width", "Pedal", 0.02, 1.0, 0.5, "of travel", false,
+      "Pedal travel from dampers first lifting to fully clear. Wider = more room for half-pedalling."),
+    p(HalfPedalDepth, "half_pedal_depth", "Half-pedal depth", "Pedal", 6.0, 72.0, 42.0, "dB", false,
+      "In the half-pedal zone, loud notes are pulled down until they're quiet enough to clear the dampers, then ring on. Larger = quieter tails near the bite point."),
     p(MasterGain, "gain", "Master gain", "Output", -36.0, 12.0, -6.0, "dB", false,
       "Output level before the soft limiter."),
 ];

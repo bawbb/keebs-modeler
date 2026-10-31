@@ -84,6 +84,65 @@ mod tests {
         assert!(rms(&tail[tail.len() - 4800..]) > 1e-3);
     }
 
+    /// Peak level (dB, pre-gain) in a 50 ms window `at` seconds after release.
+    fn tail_db(key: u8, velocity: u8, pedal: f32, p: ParamValues, at: f32) -> f64 {
+        let mut p = p;
+        p.set(ParamId::MasterGain, -36.0);
+        let mut e = Engine::new(SR, 2);
+        e.set_params(&p);
+        e.handle(Event::Sustain(pedal));
+        e.handle(Event::NoteOn { key, velocity });
+        render(&mut e, 0.2);
+        e.handle(Event::NoteOff { key });
+        let tail = render(&mut e, at + 0.05);
+        let w = &tail[(at * SR) as usize..];
+        let pk = w.iter().fold(0f32, |m, s| m.max(s.abs())) as f64 * 10f64.powf(36.0 / 20.0);
+        20.0 * pk.max(1e-12).log10()
+    }
+
+    #[test]
+    fn half_pedal_tames_loud_notes_but_spares_quiet_ones() {
+        let p = ParamValues::default();
+        let (half, full) = (0.45, 1.0);
+        let loud_full = tail_db(48, 120, full, p, 1.0);
+        let loud_half = tail_db(48, 120, half, p, 1.0);
+        let loud_none = tail_db(48, 120, 0.0, p, 1.0);
+        assert!(loud_half < loud_full - 6.0, "loud: half {loud_half:.1} vs full {loud_full:.1}");
+        assert!(loud_half > loud_none + 40.0, "half pedal should still sustain: {loud_half:.1}");
+        let quiet_full = tail_db(48, 25, full, p, 1.0);
+        let quiet_half = tail_db(48, 25, half, p, 1.0);
+        assert!((quiet_half - quiet_full).abs() < 1.5, "quiet: half {quiet_half:.1} vs full {quiet_full:.1}");
+    }
+
+    #[test]
+    fn pedal_below_bite_point_does_nothing() {
+        let p = ParamValues::default();
+        let bite = p.get(ParamId::PedalBite);
+        assert_eq!(engine::pedal_lift(bite * 0.9, &p), 0.0);
+        assert!(tail_db(48, 100, bite * 0.9, p, 1.0) < -100.0);
+    }
+
+    #[test]
+    fn damper_tone_takes_highs_first() {
+        let mut dark = ParamValues::default();
+        dark.set(ParamId::DamperTone, 1.0);
+        dark.set(ParamId::DamperRelease, 1.0);
+        let mut even = dark;
+        even.set(ParamId::DamperTone, 0.0);
+        let tail = |p: ParamValues| {
+            let mut e = Engine::new(SR, 2);
+            let mut p = p;
+            p.set(ParamId::MasterGain, -36.0);
+            e.set_params(&p);
+            e.handle(Event::NoteOn { key: 48, velocity: 110 });
+            render(&mut e, 0.2);
+            e.handle(Event::NoteOff { key: 48 });
+            render(&mut e, 0.3)[(0.2 * SR) as usize..].to_vec()
+        };
+        let (b_dark, b_even) = (brightness(&tail(dark)), brightness(&tail(even)));
+        assert!(b_dark < 0.8 * b_even, "dark {b_dark:.4} vs even {b_even:.4}");
+    }
+
     #[test]
     fn restrike_keeps_the_string_ringing() {
         let mut e = Engine::new(SR, 4);
