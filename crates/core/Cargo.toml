@@ -1,0 +1,8 @@
+[package]
+name = "keebs-core"
+description = "Sound engine: modal strings struck by nonlinear hammers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
