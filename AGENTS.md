@@ -42,6 +42,7 @@ You can't listen, so **measure**: use `survey`, `pedal`, and `bench`, and add a 
 - **Treble hammers are deliberately much lighter/harder than real** (`core/src/note.rs` anchors); otherwise soft treble notes are smothered. Per-key `level` trim keeps a medium strike equally loud on every key — re-check with `survey` after changing anchors.
 - **Damping** is folded into each mode's coefficients once per 64-sample block (`ModalString::set_damping`), so the per-sample loop stays lean.
 - Per-key defaults are log-interpolated between anchors in `note.rs`.
+- **Performance ideas** go in `docs/performance.md` as you notice them (new hot loops, per-mode costs, memory). Note them; don't apply them — desktop stays unconstrained.
 
 ## UI (egui 0.37)
 
