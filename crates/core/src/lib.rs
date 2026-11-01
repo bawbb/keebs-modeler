@@ -5,6 +5,7 @@ pub mod hammer;
 pub mod midi;
 pub mod note;
 pub mod params;
+pub mod preset;
 pub mod string;
 pub mod voice;
 

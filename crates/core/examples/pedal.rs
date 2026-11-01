@@ -1,14 +1,24 @@
 //! How a note decays after release at different pedal positions.
-//!   cargo run --release -p keebs-core --example pedal [key=48] [vel=110] [param=value ...]
+//!   cargo run --release -p keebs-core --example pedal [key=48] [vel=110] [preset=<name>] [param=value ...]
 use keebs_core::{Engine, Event, ParamValues, engine::pedal_lift, params};
+
+/// `preset=<name or path>`: a file path, or a name saved by the player under `presets/`.
+fn load_preset(arg: &str) -> ParamValues {
+    let path = if std::path::Path::new(arg).is_file() { arg.into() } else { format!("{}/../../presets/{arg}.preset", env!("CARGO_MANIFEST_DIR")) };
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("preset `{path}`: {e}"));
+    let (p, warnings) = keebs_core::preset::from_text(&text);
+    for w in warnings { eprintln!("preset `{path}`: {w}"); }
+    p
+}
 
 fn main() {
     let sr = 48_000.0;
     let (mut key, mut vel) = (48u8, 110u8);
-    let mut p = ParamValues::default();
+    let mut p = std::env::args().find_map(|a| a.strip_prefix("preset=").map(load_preset)).unwrap_or_default();
     for arg in std::env::args().skip(1) {
         let (k, v) = arg.split_once('=').expect("key=value");
         match k {
+            "preset" => {}
             "key" => key = v.parse().unwrap(),
             "vel" => vel = v.parse().unwrap(),
             _ => p.set(params::find(k).expect("unknown param").id, v.parse().unwrap()),

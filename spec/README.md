@@ -7,6 +7,7 @@ Each file covers one part of the vision. Keep them short.
 - [expression.md](expression.md) — how it responds to the player
 - [tone.md](tone.md) — the character controls
 - [keyboard-range.md](keyboard-range.md) — how character varies across the keys
+- [presets.md](presets.md) — saving and recalling sounds
 - [platform.md](platform.md) — where it runs
 
 Research, notes, and implementation thinking live in [`../docs`](../docs).

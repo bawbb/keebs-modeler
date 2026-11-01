@@ -1,9 +1,10 @@
 //! keebs: play the modelled string from a MIDI keyboard.
 //!
-//!   keebs [--midi <name>] [--buffer <frames>] [--list]
+//!   keebs [--midi <name>] [--preset <name>] [--buffer <frames>] [--list]
 
 mod audio;
 mod midi;
+mod presets;
 mod shared;
 mod ui;
 
@@ -14,14 +15,20 @@ use std::sync::{Arc, Mutex};
 fn main() -> Result<(), String> {
     let mut midi_wanted = String::new();
     let mut buffer = 128u32;
+    let mut preset = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--midi" => midi_wanted = args.next().ok_or("--midi needs a name")?,
+            "--preset" => preset = Some(args.next().ok_or("--preset needs a name")?),
             "--buffer" => buffer = args.next().and_then(|b| b.parse().ok()).ok_or("--buffer needs a number")?,
             "--list" => {
                 println!("MIDI inputs:");
                 for p in midi::port_names() {
+                    println!("  {p}");
+                }
+                println!("Presets ({}):", presets::dir().display());
+                for p in presets::list() {
                     println!("  {p}");
                 }
                 println!("Audio outputs:");
@@ -32,7 +39,7 @@ fn main() -> Result<(), String> {
                 }
                 return Ok(());
             }
-            _ => return Err(format!("unknown argument `{a}`\nusage: keebs [--midi <name>] [--buffer <frames>] [--list]")),
+            _ => return Err(format!("unknown argument `{a}`\nusage: keebs [--midi <name>] [--preset <name>] [--buffer <frames>] [--list]")),
         }
     }
 
@@ -48,7 +55,7 @@ fn main() -> Result<(), String> {
     eframe::run_native(
         "keebs",
         options,
-        Box::new(move |_| Ok(Box::new(ui::App::new(params, stats, tx, audio, buffer, &midi_wanted)))),
+        Box::new(move |_| Ok(Box::new(ui::App::new(params, stats, tx, audio, buffer, &midi_wanted, preset.as_deref())))),
     )
     .map_err(|e| e.to_string())
 }

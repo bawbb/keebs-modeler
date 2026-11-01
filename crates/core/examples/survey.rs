@@ -1,5 +1,5 @@
 //! Survey loudness, brightness, and hammer contact across keys and velocities.
-//!   cargo run --release -p keebs-core --example survey [param=value ...]
+//!   cargo run --release -p keebs-core --example survey [preset=<name>] [param=value ...]
 use keebs_core::{Engine, Event, ParamId, ParamValues, note::NoteDefaults, params, string::mode_frequency};
 use std::f64::consts::PI;
 
@@ -26,11 +26,21 @@ fn a_weight(f: f64) -> f64 {
     (ra * 1.2589).powi(2) // +2 dB so 1 kHz is 0 dB
 }
 
+/// `preset=<name or path>`: a file path, or a name saved by the player under `presets/`.
+fn load_preset(arg: &str) -> ParamValues {
+    let path = if std::path::Path::new(arg).is_file() { arg.into() } else { format!("{}/../../presets/{arg}.preset", env!("CARGO_MANIFEST_DIR")) };
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("preset `{path}`: {e}"));
+    let (p, warnings) = keebs_core::preset::from_text(&text);
+    for w in warnings { eprintln!("preset `{path}`: {w}"); }
+    p
+}
+
 fn main() {
-    let mut p = ParamValues::default();
+    let mut p = std::env::args().find_map(|a| a.strip_prefix("preset=").map(load_preset)).unwrap_or_default();
     p.set(ParamId::MasterGain, -36.0);
     for arg in std::env::args().skip(1) {
         let (k, v) = arg.split_once('=').expect("key=value");
+        if k == "preset" { continue; }
         p.set(params::find(k).expect("unknown param").id, v.parse().expect("number"));
     }
     let gain = 10f64.powf(-p.get(ParamId::MasterGain) as f64 / 20.0);

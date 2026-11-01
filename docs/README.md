@@ -9,4 +9,5 @@ Research, notes, and implementation thinking gathered along the way. The *what* 
 - [notes-pedal-damper.md](notes-pedal-damper.md) — continuous pedal curve, gap-based half-pedal, damper tone
 - [notes-bass.md](notes-bass.md) — why the bass sounded weak: peak vs perceived loudness, hammer levers, pulse-gap cutoff bug
 - [notes-string-construction.md](notes-string-construction.md) — strings built from core + winding: derived mass/tension/stiffness, wound/plain break, hammer matching
+- [notes-presets.md](notes-presets.md) — preset files: location, text format, how old presets keep loading
 - [performance.md](performance.md) — running list of optimization ideas for the hardware port (none applied yet)

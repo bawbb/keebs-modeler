@@ -15,6 +15,7 @@ An expressive, physically modelled struck-string instrument played from a MIDI k
 - `crates/core` — the sound engine. No I/O. `examples/` hold measurement tools.
 - `crates/app` — standalone player (`cpal` audio, `midir` MIDI, `eframe`/egui UI).
 - `crates/render` — offline WAV renderer (defaults to `tmp/out.wav`).
+- `presets/` — saved sounds (`<name>.preset`, plain `key = value` text). Keep parameter `key`s stable: renaming one breaks it in existing presets.
 
 ## Commands
 
@@ -22,12 +23,15 @@ An expressive, physically modelled struck-string instrument played from a MIDI k
 cargo test -p keebs-core --release                 # engine tests
 cargo clippy --workspace --release                 # keep at zero warnings
 cargo run --release -p keebs                       # play (all MIDI inputs, auto audio out)
-cargo run --release -p keebs -- --list             # MIDI inputs + audio outputs
+cargo run --release -p keebs -- --list             # MIDI inputs, presets, audio outputs
+cargo run --release -p keebs -- --preset <name>    # start with a saved preset
 cargo run --release -p keebs-render -- help        # render options + every parameter
 cargo run --release -p keebs-core --example survey [param=value ...]  # loudness/brightness/contact per key & velocity
 cargo run --release -p keebs-core --example pedal  [param=value ...]  # decay after release at pedal positions
 cargo run --release -p keebs-core --example bench                     # CPU cost of dense chords
 ```
+
+`render`, `survey`, and `pedal` take `preset=<name or path>` (saved presets live in `presets/`); other `param=value` args override it.
 
 ## Verifying sound changes
 

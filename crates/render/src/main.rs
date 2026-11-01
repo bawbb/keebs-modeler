@@ -4,6 +4,7 @@
 //!
 //! Options: note=60  vel=100 (or vel=20,60,100,127 for a sweep)  hold=2.0 (s per strike)
 //!          gap=0.5 (s after release)  pedal=0..1  sr=48000  out=tmp/out.wav
+//! preset=<name or path> starts from a saved preset (`presets/<name>.preset`); other keys then override it.
 //! Any engine parameter by key, e.g. strike_pos=0.5 hardness=3 inharm=8. `render help` lists them.
 
 use keebs_core::{Engine, Event, PARAMS, ParamValues, params};
@@ -19,9 +20,21 @@ fn main() -> ExitCode {
     }
 }
 
+/// A file path, or a name saved by the player under `presets/`.
+fn load_preset(arg: &str) -> Result<ParamValues, String> {
+    let path = if std::path::Path::new(arg).is_file() { arg.into() } else { format!("{}/../../presets/{arg}.preset", env!("CARGO_MANIFEST_DIR")) };
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("preset `{path}`: {e}"))?;
+    let (p, warnings) = keebs_core::preset::from_text(&text);
+    for w in warnings {
+        eprintln!("preset `{path}`: {w}");
+    }
+    Ok(p)
+}
+
 fn usage() {
     eprintln!("render [key=value ...]\n");
-    eprintln!("  note=60  vel=100 | vel=20,60,100,127  hold=2.0  gap=0.5  pedal=0..1  sr=48000  out=tmp/out.wav\n");
+    eprintln!("  note=60  vel=100 | vel=20,60,100,127  hold=2.0  gap=0.5  pedal=0..1  sr=48000  out=tmp/out.wav");
+    eprintln!("  preset=<name or path>  start from a saved preset; parameters given here override it\n");
     eprintln!("Engine parameters:");
     for s in &PARAMS {
         eprintln!("  {:<12} {:>7} .. {:<7} default {:<6} {}  — {}", s.key, s.min, s.max, s.default, s.unit, s.help);
@@ -37,6 +50,9 @@ fn run() -> Result<(), String> {
     let mut sr = 48_000u32;
     let mut out = String::from("tmp/out.wav");
     let mut p = ParamValues::default();
+    if let Some(arg) = std::env::args().find_map(|a| a.strip_prefix("preset=").map(String::from)) {
+        p = load_preset(&arg)?;
+    }
 
     for arg in std::env::args().skip(1) {
         if arg == "help" || arg == "--help" || arg == "-h" {
@@ -55,6 +71,7 @@ fn run() -> Result<(), String> {
             "pedal" => pedal = num(v)?.clamp(0.0, 1.0),
             "sr" => sr = num(v)? as u32,
             "out" => out = v.to_string(),
+            "preset" => {} // loaded first, above
             _ => {
                 let s = params::find(k).ok_or_else(|| format!("unknown option `{k}` (try `render help`)"))?;
                 p.set(s.id, num(v)?);

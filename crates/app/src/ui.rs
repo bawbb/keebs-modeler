@@ -2,6 +2,7 @@
 
 use crate::audio::Audio;
 use crate::midi;
+use crate::presets;
 use crate::shared::{EventTx, SharedParams, Stats, send};
 use eframe::egui;
 use keebs_core::{Event, PARAMS, ParamId, ParamValues};
@@ -36,6 +37,7 @@ pub struct App {
     key_velocity: u8,
     peak_hold: f32,
     wheel: WheelLatch,
+    preset: PresetState,
 }
 
 /// What the current scroll gesture is driving. Decided when the gesture starts
@@ -45,6 +47,38 @@ pub struct App {
 enum WheelTarget {
     Param(ParamId),
     List,
+}
+
+/// The preset row: what's loaded, the name being typed, and any pending confirmation.
+#[derive(Default)]
+struct PresetState {
+    names: Vec<String>,
+    /// The preset last loaded or saved, and its values (to show unsaved changes and revert).
+    current: Option<(String, ParamValues)>,
+    /// The name box.
+    name: String,
+    confirm: Option<Confirm>,
+    message: Option<Message>,
+}
+
+enum Confirm {
+    Overwrite(String),
+    Delete(String),
+}
+
+struct Message {
+    text: String,
+    detail: Vec<String>,
+    error: bool,
+}
+
+impl Message {
+    fn ok(text: String) -> Option<Self> {
+        Some(Self { text, detail: Vec::new(), error: false })
+    }
+    fn err(text: String) -> Option<Self> {
+        Some(Self { text, detail: Vec::new(), error: true })
+    }
 }
 
 #[derive(Default)]
@@ -64,6 +98,7 @@ impl App {
         audio: Audio,
         buffer_frames: u32,
         midi_wanted: &str,
+        preset: Option<&str>,
     ) -> Self {
         let mut app = Self {
             params: shared.load(),
@@ -81,8 +116,13 @@ impl App {
             key_velocity: 90,
             peak_hold: 0.0,
             wheel: WheelLatch::default(),
+            preset: PresetState { names: presets::list(), ..Default::default() },
         };
         app.connect_midi(midi_wanted);
+        app.load_preset(preset.unwrap_or(presets::DEFAULT));
+        if preset.is_none() {
+            app.preset.message = None; // starting on the defaults needs no announcement
+        }
         app
     }
 
@@ -153,8 +193,13 @@ impl App {
 
     fn computer_keys(&mut self, ui: &egui::Ui) {
         let events = ui.input(|i| i.events.clone());
+        // While typing (a preset name, a value), keys type; releases still pass so nothing sticks.
+        let typing = ui.ctx().text_edit_focused();
         for ev in events {
             if let egui::Event::Key { key, pressed, repeat: false, .. } = ev {
+                if typing && pressed {
+                    continue;
+                }
                 if let Some((_, off)) = KEYMAP.iter().find(|(k, _)| *k == key) {
                     let note = self.base_note.saturating_add(*off).min(127);
                     let ev = if pressed {
@@ -219,6 +264,136 @@ impl App {
         });
     }
 
+    fn load_preset(&mut self, name: &str) {
+        let st = &mut self.preset;
+        st.confirm = None;
+        match presets::load(name) {
+            Ok((p, warnings)) => {
+                self.params = p;
+                self.shared.store(&p);
+                st.current = Some((name.to_string(), p));
+                // The built-in can't be saved over, so don't offer its name for saving.
+                st.name = if name == presets::DEFAULT { String::new() } else { name.to_string() };
+                st.message = Some(if warnings.is_empty() {
+                    Message { text: format!("Loaded '{name}'"), detail: Vec::new(), error: false }
+                } else {
+                    let n = warnings.len();
+                    let s = if n == 1 { "" } else { "s" };
+                    Message { text: format!("Loaded '{name}' with {n} warning{s} (hover)"), detail: warnings, error: true }
+                });
+            }
+            Err(e) => st.message = Message::err(e),
+        }
+    }
+
+    fn save_preset(&mut self, name: &str) {
+        let st = &mut self.preset;
+        st.confirm = None;
+        match presets::save(name, &self.params) {
+            Ok(()) => {
+                st.current = Some((name.to_string(), self.params));
+                st.names = presets::list();
+                st.message = Message::ok(format!("Saved '{name}'"));
+            }
+            Err(e) => st.message = Message::err(e),
+        }
+    }
+
+    fn preset_row(&mut self, ui: &mut egui::Ui) {
+        let modified = self.preset.current.as_ref().is_some_and(|(_, p)| *p != self.params);
+        let current_name = self.preset.current.as_ref().map(|(n, _)| n.clone());
+        let mut pick = None;
+        ui.horizontal(|ui| {
+            ui.label("Preset:");
+            let shown = match &current_name {
+                Some(n) if modified => format!("{n} (modified)"),
+                Some(n) => n.clone(),
+                None => "none loaded".into(),
+            };
+            let combo = egui::ComboBox::from_id_salt("preset").selected_text(shown).width(200.0).show_ui(ui, |ui| {
+                for name in &self.preset.names {
+                    let label = if name == presets::DEFAULT { "Default (built in)" } else { name.as_str() };
+                    if ui.selectable_label(current_name.as_deref() == Some(name), label).clicked() {
+                        pick = Some(name.clone());
+                    }
+                    if name == presets::DEFAULT {
+                        ui.separator();
+                        if self.preset.names.len() == 1 {
+                            ui.weak("no saved presets yet");
+                        }
+                    }
+                }
+            });
+            // Pick up files added or removed outside the app each time the list opens.
+            if combo.response.clicked() {
+                self.preset.names = presets::list();
+            }
+
+            match self.preset.confirm.take() {
+                Some(Confirm::Overwrite(name)) => {
+                    ui.label(format!("'{name}' exists. Overwrite it?"));
+                    if ui.button("Overwrite").clicked() {
+                        self.save_preset(&name);
+                    } else if !ui.button("Cancel").clicked() {
+                        self.preset.confirm = Some(Confirm::Overwrite(name));
+                    }
+                }
+                Some(Confirm::Delete(name)) => {
+                    ui.label(format!("Delete '{name}'?"));
+                    if ui.button("Delete").clicked() {
+                        self.preset.message = match presets::delete(&name) {
+                            Ok(()) => {
+                                self.preset.current = None;
+                                Message::ok(format!("Deleted '{name}'"))
+                            }
+                            Err(e) => Message::err(e),
+                        };
+                        self.preset.names = presets::list();
+                    } else if !ui.button("Cancel").clicked() {
+                        self.preset.confirm = Some(Confirm::Delete(name));
+                    }
+                }
+                None => {
+                    let edit = ui.add(egui::TextEdit::singleline(&mut self.preset.name).hint_text("name").desired_width(150.0));
+                    let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if ui.button("Save").on_hover_text("Save every setting under this name").clicked() || enter {
+                        match presets::check_name(&self.preset.name).map(str::to_string) {
+                            Err(e) => self.preset.message = Message::err(e),
+                            Ok(name) if presets::exists(&name) && current_name.as_deref() != Some(&name) => {
+                                self.preset.confirm = Some(Confirm::Overwrite(name));
+                            }
+                            Ok(name) => self.save_preset(&name),
+                        }
+                    }
+                    if ui.add_enabled(modified, egui::Button::new("Revert")).on_hover_text("Back to the preset as saved").clicked()
+                        && let Some((_, p)) = self.preset.current
+                    {
+                        self.params = p;
+                        self.shared.store(&p);
+                        self.preset.message = None;
+                    }
+                    let deletable = current_name.as_deref().is_some_and(|n| n != presets::DEFAULT);
+                    if ui.add_enabled(deletable, egui::Button::new("Delete…")).clicked()
+                        && let Some(name) = current_name.clone()
+                    {
+                        self.preset.confirm = Some(Confirm::Delete(name));
+                    }
+                }
+            }
+
+            if let Some(m) = &self.preset.message {
+                let color = if m.error { ui.visuals().warn_fg_color } else { ui.visuals().weak_text_color() };
+                let r = ui.colored_label(color, &m.text);
+                if !m.detail.is_empty() {
+                    r.on_hover_text(m.detail.join("\n"));
+                }
+            }
+        });
+        if let Some(name) = pick {
+            self.load_preset(&name);
+        }
+    }
+
     fn controls(&mut self, ui: &mut egui::Ui) {
         self.wheel.areas.clear();
         let mut changed = false;
@@ -273,11 +448,6 @@ impl App {
                 self.params.set(s.id, v);
                 changed = true;
             }
-        }
-        ui.add_space(8.0);
-        if ui.button("Reset all to defaults").clicked() {
-            self.params = ParamValues::default();
-            changed = true;
         }
         if changed {
             self.shared.store(&self.params);
@@ -358,6 +528,7 @@ impl eframe::App for App {
             ui.add_space(4.0);
             self.audio_row(ui);
             self.midi_row(ui);
+            self.preset_row(ui);
             ui.horizontal(|ui| {
                 ui.label(format!("Computer keys: A–K play from note {} · Z/X octave · velocity", self.base_note));
                 ui.add(egui::Slider::new(&mut self.key_velocity, 1..=127));
