@@ -244,7 +244,13 @@ impl App {
                 // Leave room for the value box the slider draws to its right.
                 let track = (ui.available_width() - VALUE_WIDTH).max(80.0);
                 ui.spacing_mut().slider_width = track;
-                let r = ui.add(egui::Slider::new(&mut v, s.min..=s.max).logarithmic(s.log)).on_hover_text(s.help);
+                let mut slider = egui::Slider::new(&mut v, s.min..=s.max).logarithmic(s.log);
+                if s.unit == "key" {
+                    slider = slider
+                        .custom_formatter(|k, _| format!("{} · {k:.1}", note_name(k)))
+                        .custom_parser(|t| t.rsplit(['·', ' ']).next()?.trim().parse().ok());
+                }
+                let r = ui.add(slider).on_hover_text(s.help);
                 // The response covers track + value box; keep just the value box.
                 let mut value_box = r.rect;
                 value_box.min.x += track;
@@ -277,6 +283,13 @@ impl App {
             self.shared.store(&self.params);
         }
     }
+}
+
+/// MIDI key number as a note name, e.g. 60 → "C4".
+fn note_name(key: f64) -> String {
+    const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let k = key.round() as i32;
+    format!("{}{}", NAMES[k.rem_euclid(12) as usize], k.div_euclid(12) - 1)
 }
 
 /// A pause this long ends a scroll gesture, s.
