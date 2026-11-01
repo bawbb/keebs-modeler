@@ -1,0 +1,46 @@
+# keebs preset
+
+# Strike
+strike_pos = 0.119
+
+# Hammer
+hardness = 0.4
+felt_exp = 1.53
+hysteresis = 0.261
+hammer_mass = 3.8
+
+# Touch
+max_speed = 6.85
+vel_curve = 2.64
+
+# String
+inharm = 1.75
+sustain = 2.09
+hf_damp = 0.126
+
+# Construction
+gauge = 1.065
+winding = 2.69
+wound_break = 50
+wound_blend = 24
+winding_damp = 0.81
+hammer_match = 0.561
+
+# Audibility
+tilt = 3.12
+odd_even = 0.29
+listen_mix = 0.375
+listen_pos = 0.351
+
+# Damper
+damper = 0.195
+damper_tone = 0.76
+
+# Pedal
+pedal_bite = 0.15
+pedal_width = 0.73
+half_pedal_depth = 11.4
+
+# Output
+key_balance = 1
+gain = -6
