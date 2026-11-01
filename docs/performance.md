@@ -36,5 +36,10 @@ Add an entry whenever a feature introduces a hot loop, a per-mode cost, or a mem
 
 ## Voices
 
-- **Raise the silence threshold.** It is currently −80 dB relative to the voice's peak, over 8 blocks. Freeing voices sooner is the cheapest win.
+- **Raise the silence threshold.** It is currently −80 dB relative to the voice's peak, held for 10 ms or two periods of the fundamental, whichever is longer. Freeing voices sooner is the cheapest win.
 - **A voice cap with quietest-voice stealing** already exists. On hardware the cap will be lower, so steal by mode cost, not voice count.
+
+## String construction
+
+- **Thinner or bare-core strings change the mode count.** Gauge and winding change B, which changes how many partials fit under 20 kHz. Very stiff strings get fewer modes, nearly harmonic ones more. A budget should look at the actual counts, not assume the defaults.
+- **`NoteDefaults::new` builds the construction twice**, once for the default reference, on every `configure()`. Cache the reference per key if control-rate cost matters.

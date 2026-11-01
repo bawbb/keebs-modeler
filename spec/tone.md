@@ -16,6 +16,8 @@ Controls that shape the instrument's character. Each is adjustable by the player
 ## String
 
 - String material character, from the dense growl of a wound bass string to the bright ring of plain steel, as a continuous blend rather than a fixed choice.
+- String weight and thickness, independent of pitch: heavier strings respond differently to the hammer, ring differently, and carry different overtones.
+- Whether a change of string changes only the string's character, or also the touch and loudness, as it would on a real instrument.
 - Number of strings per note (one, two, three, or in between), and how far apart they are tuned.
 
 ## Body

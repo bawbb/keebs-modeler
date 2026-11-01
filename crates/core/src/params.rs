@@ -13,6 +13,12 @@ pub enum ParamId {
     Inharmonicity,
     Sustain,
     HfDamping,
+    StringGauge,
+    WindingWeight,
+    WoundBreak,
+    WoundBlend,
+    WindingDamping,
+    HammerMatching,
     Tilt,
     OddEven,
     ListenMix,
@@ -26,7 +32,7 @@ pub enum ParamId {
     MasterGain,
 }
 
-pub const PARAM_COUNT: usize = 21;
+pub const PARAM_COUNT: usize = 27;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ParamSpec {
@@ -83,6 +89,18 @@ pub const PARAMS: [ParamSpec; PARAM_COUNT] = [
       "How long the fundamental rings, relative to the key's default."),
     p(HfDamping, "hf_damp", "High-partial damping", "String", 0.0, 1.0, 0.25, "", false,
       "How much faster high partials die than low ones. 0 = all ring equally."),
+    p(StringGauge, "gauge", "String gauge", "Construction", 0.25, 3.0, 1.0, "x", true,
+      "Steel core thickness relative to each key's default. Thicker = heavier, stiffer (stretched, bell-like overtones), shorter ring."),
+    p(WindingWeight, "winding", "Winding weight", "Construction", 0.0, 4.0, 1.0, "x", false,
+      "How much copper winding the wound strings carry. 0 = bare steel core: light, very stretched overtones, long ring. More = heavier, more in-tune overtones, shorter ring."),
+    p(WoundBreak, "wound_break", "Wound/plain break", "Construction", 0.0, 128.0, 43.0, "key", false,
+      "Key where wound strings give way to plain steel (the middle of the blend). Far left = all plain, far right = all wound."),
+    p(WoundBlend, "wound_blend", "Wound/plain blend", "Construction", 0.0, 48.0, 6.0, "keys", false,
+      "How many keys the change from wound to plain is spread across. 0 = an abrupt break like a real piano's."),
+    p(WindingDamping, "winding_damp", "Winding damping", "Construction", 0.0, 4.0, 0.0, "x", false,
+      "Extra loss of high partials on wound strings (friction inside the winding). Makes them duller and thuddier than plain steel."),
+    p(HammerMatching, "hammer_match", "Hammer matching", "Construction", 0.0, 1.0, 0.0, "", false,
+      "0 = same hammers whatever the strings: heavier strings are louder and punchier, light ones quieter and smothered. 1 = hammers and level follow the strings, so construction only changes the string's own character."),
     p(Tilt, "tilt", "Partial tilt", "Audibility", -12.0, 12.0, 0.0, "dB/oct", false,
       "Boost or cut higher partials in what you hear, without changing how the string moves."),
     p(OddEven, "odd_even", "Odd / even", "Audibility", -1.0, 1.0, 0.0, "", false,

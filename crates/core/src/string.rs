@@ -87,7 +87,7 @@ impl ModalString {
         let damper_tone = p.get(ParamId::DamperTone) as f64;
         let f1 = nd.f0;
         let sigma1 = T60_TO_SIGMA / (nd.t60 * p.get(ParamId::Sustain) as f64);
-        let hf = HF_DAMPING_K * p.get(ParamId::HfDamping) as f64;
+        let hf = HF_DAMPING_K * p.get(ParamId::HfDamping) as f64 * (1.0 + p.get(ParamId::WindingDamping) as f64 * nd.wound);
         let strike = p.get(ParamId::StrikePos) as f64;
         let tilt_db_oct = p.get(ParamId::Tilt) as f64;
         let odd_even = p.get(ParamId::OddEven) as f64;

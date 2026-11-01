@@ -50,7 +50,7 @@ fn main() {
             let ring = &out[(0.005 * SR) as usize..];
             let peak = ring.iter().fold(0f64, |m, s| m.max(s.abs() as f64));
             let rms = (ring.iter().map(|s| (*s as f64).powi(2)).sum::<f64>() / ring.len() as f64).sqrt();
-            let nd = NoteDefaults::for_key(key);
+            let nd = NoteDefaults::new(key, &p);
             let b = nd.b * p.get(ParamId::Inharmonicity) as f64;
             // Brightness: power-weighted mean partial number over the first 40 partials.
             let pw: Vec<(f64, f64)> = (1..=40).map(|n| (n as f64, mode_frequency(n, nd.f0, b)))

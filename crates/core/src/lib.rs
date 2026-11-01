@@ -185,14 +185,28 @@ mod tests {
 
     #[test]
     fn extreme_settings_stay_finite() {
-        let mut p = ParamValues::default();
-        for s in &PARAMS {
-            p.set(s.id, s.max);
+        for pick in [|s: &ParamSpec| s.max, |s: &ParamSpec| s.min] {
+            let mut p = ParamValues::default();
+            for s in &PARAMS {
+                p.set(s.id, pick(s));
+            }
+            p.set(ParamId::StrikePos, 0.02);
+            p.set(ParamId::MasterGain, 0.0);
+            for key in [21, 44, 60, 108] {
+                let out = strike(key, 127, p);
+                assert!(out.iter().all(|s| s.is_finite()), "key {key}");
+            }
         }
-        p.set(ParamId::StrikePos, 0.02);
-        for key in [21, 60, 108] {
-            let out = strike(key, 127, p);
-            assert!(out.iter().all(|s| s.is_finite()), "key {key}");
-        }
+    }
+
+    #[test]
+    fn heavier_winding_brightens_the_bass_with_the_same_hammer() {
+        let mut light = ParamValues::default();
+        light.set(ParamId::WindingWeight, 0.3);
+        let mut heavy = ParamValues::default();
+        heavy.set(ParamId::WindingWeight, 2.5);
+        let (l, h) = (strike(28, 90, light), strike(28, 90, heavy));
+        assert!(rms(&h) > rms(&l), "heavier string should be louder");
+        assert!(brightness(&h) > 1.1 * brightness(&l), "light {} heavy {}", brightness(&l), brightness(&h));
     }
 }

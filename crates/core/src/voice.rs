@@ -78,7 +78,6 @@ impl Voice {
     /// Take this voice for `key` (silencing whatever it held).
     pub fn assign(&mut self, key: u8, p: &ParamValues) {
         self.key = Some(key);
-        self.nd = NoteDefaults::for_key(key);
         self.string.reset();
         self.configure(p);
         self.hammer = Hammer::default();
@@ -91,6 +90,7 @@ impl Voice {
     }
 
     pub fn configure(&mut self, p: &ParamValues) {
+        self.nd = NoteDefaults::new(self.key.unwrap_or(60), p);
         self.string.configure(&self.nd, p, self.sample_rate);
         self.damper_sigma = T60_TO_SIGMA / p.get(ParamId::DamperRelease) as f64;
         self.half_pedal_depth_db = p.get(ParamId::HalfPedalDepth) as f64;
